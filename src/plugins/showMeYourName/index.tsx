@@ -1253,6 +1253,28 @@ const settings = definePluginSettings({
     },
 });
 
+/**
+ * Mention autocomplete matches against the member list it is handed, so a custom nickname
+ * can only be typed to find someone if it is in there. Only the copy passed to the matcher
+ * is changed. The popup reads the real nick back from the store when it renders, so nothing
+ * on screen looks different.
+ */
+function withCustomNicknames(members: GuildMember[]) {
+    if (settings.store.customNameOnlyInDirectMessages) return members;
+
+    let result = members;
+
+    for (let i = 0; i < members.length; i++) {
+        const custom = customNicknames[members[i].userId];
+        if (!custom) continue;
+
+        if (result === members) result = members.slice();
+        result[i] = { ...members[i], nick: custom };
+    }
+
+    return result;
+}
+
 export default definePlugin({
     name: "ShowMeYourName",
     description: "Display any permutation of custom nicknames, friend nicknames, server nicknames, display names, and usernames in chat.",
@@ -1500,6 +1522,15 @@ export default definePlugin({
                 match: /(serverDeaf:\i,)nick:(\i)/,
                 replace: "$1showMeYourNameVoice:$2=$self.getTypingMemberListProfilesReactionsVoiceNameText({user:arguments[0].user,guildId:arguments[0].channel.guild_id,type:\"voiceChannel\"})??(arguments[0].nick)"
             }
+        },
+        {
+            // Let custom names be typed to find someone in mention autocomplete.
+            // queryGuildUsers( alone also matches the module that calls it.
+            find: "queryGuildMentionResults(",
+            replacement: {
+                match: /(\i\.\i\.getMembers\(\i(?:\.\i)?\)\.filter\(\i\))/g,
+                replace: "$self.withCustomNicknames($1)"
+            }
         }
     ],
 
@@ -1551,5 +1582,6 @@ export default definePlugin({
     getNativeGradientGlowOverflowClassName,
     shouldAnimateNameEffects,
     getTypingMemberListProfilesReactionsVoiceNameText,
-    getTypingMemberListProfilesReactionsVoiceNameElement
+    getTypingMemberListProfilesReactionsVoiceNameElement,
+    withCustomNicknames
 });
