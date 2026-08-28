@@ -351,7 +351,7 @@ interface messageProps {
 
 interface memberListProfileReactionProps {
     user: User | null | undefined;
-    type: "typingIndicator" | "membersList" | "profilesPopout" | "profilesTooltip" | "reactionsTooltip" | "reactionsPopout" | "voiceChannel";
+    type: "typingIndicator" | "membersList" | "profilesPopout" | "profilesTooltip" | "reactionsTooltip" | "reactionsPopout" | "voiceChannel" | "mentionAutocomplete";
     guildId?: string;
     tags?: any;
     isHovered?: boolean;
@@ -374,7 +374,7 @@ function getTypingMemberListProfilesReactionsVoiceName(
     const guildId = props.guildId || props.tags?.props?.displayProfile?.guildId || null;
     const member = guildId && user ? GuildMemberStore.getMember(guildId, user.id) : null;
     const author = user && member ? { ...user, ...member } : user || member || null;
-    const shouldHookless = ["typingIndicator", "reactionsTooltip", "profilesTooltip"].includes(type);
+    const shouldHookless = ["typingIndicator", "reactionsTooltip", "profilesTooltip", "mentionAutocomplete"].includes(type);
     return renderUsername(author, null, null, type, "", shouldHookless, !!guildId, undefined, undefined, props.isHovered);
 }
 
@@ -575,7 +575,7 @@ function renderUsername(
     author: User | GuildMember | null,
     channelId: string | null,
     messageId: string | null,
-    type: "messages" | "replies" | "typingIndicator" | "mentions" | "membersList" | "profilesPopout" | "profilesTooltip" | "reactionsTooltip" | "reactionsPopout" | "voiceChannel",
+    type: "messages" | "replies" | "typingIndicator" | "mentions" | "membersList" | "profilesPopout" | "profilesTooltip" | "reactionsTooltip" | "reactionsPopout" | "voiceChannel" | "mentionAutocomplete",
     mentionSymbol: string,
     hookless: boolean,
     inGuild: boolean,
@@ -593,9 +593,10 @@ function renderUsername(
     const isReactionsTooltip = type === "reactionsTooltip";
     const isReaction = isReactionsTooltip || isReactionsPopout;
     const isVoice = type === "voiceChannel";
+    const isMentionAutocomplete = type === "mentionAutocomplete";
 
-    const config = hookless ? settings.store : settings.use(["messages", "replies", "mentions", "typingIndicator", "memberList", "styleDirectMessagesList", "styleDirectMessagesMessages", "styleFriendsList", "styleActiveNow", "profilePopout", "reactions", "friendNameOnlyInDirectMessages", "customNameOnlyInDirectMessages", "discriminators", "hideDefaultAtSign", "truncateAllNamesWithStreamerMode", "removeDuplicates", "ignoreEffects", "ignoreFonts", "animateEffects", "alwaysAnimateEffects", "gradientGlow", "includedNames", "customNameColor", "friendNameColor", "nicknameColor", "displayNameColor", "usernameColor", "nameSeparator", "triggerNameRerender"]);
-    const { messages, replies, mentions, typingIndicator, memberList, styleDirectMessagesMessages, profilePopout, reactions, friendNameOnlyInDirectMessages, customNameOnlyInDirectMessages, discriminators, truncateAllNamesWithStreamerMode, removeDuplicates, ignoreEffects, ignoreFonts, animateEffects, includedNames, customNameColor, friendNameColor, nicknameColor, displayNameColor, usernameColor, nameSeparator, triggerNameRerender } = config;
+    const config = hookless ? settings.store : settings.use(["messages", "replies", "mentions", "mentionAutocomplete", "typingIndicator", "memberList", "styleDirectMessagesList", "styleDirectMessagesMessages", "styleFriendsList", "styleActiveNow", "profilePopout", "reactions", "friendNameOnlyInDirectMessages", "customNameOnlyInDirectMessages", "discriminators", "hideDefaultAtSign", "truncateAllNamesWithStreamerMode", "removeDuplicates", "ignoreEffects", "ignoreFonts", "animateEffects", "alwaysAnimateEffects", "gradientGlow", "includedNames", "customNameColor", "friendNameColor", "nicknameColor", "displayNameColor", "usernameColor", "nameSeparator", "triggerNameRerender"]);
+    const { messages, replies, mentions, mentionAutocomplete, typingIndicator, memberList, styleDirectMessagesMessages, profilePopout, reactions, friendNameOnlyInDirectMessages, customNameOnlyInDirectMessages, discriminators, truncateAllNamesWithStreamerMode, removeDuplicates, ignoreEffects, ignoreFonts, animateEffects, includedNames, customNameColor, friendNameColor, nicknameColor, displayNameColor, usernameColor, nameSeparator, triggerNameRerender } = config;
 
     const channel = channelId ? ChannelStore.getChannel(channelId) || null : null;
     const message = channelId && messageId ? MessageStore.getMessage(channelId, messageId) : null;
@@ -748,6 +749,8 @@ function renderUsername(
     } else if (isReaction && !reactions) {
         return [null, null, null];
     } else if (isVoice && !reactions) {
+        return [null, null, null];
+    } else if (isMentionAutocomplete && !mentionAutocomplete) {
         return [null, null, null];
     } else if (!author || !username) {
         return [null, null, null];
@@ -1099,6 +1102,11 @@ const settings = definePluginSettings({
         default: true,
         description: "Display custom name format in mentions.",
     },
+    mentionAutocomplete: {
+        type: OptionType.BOOLEAN,
+        default: true,
+        description: "Display custom name format in the mention autocomplete list.",
+    },
     typingIndicator: {
         type: OptionType.BOOLEAN,
         default: true,
@@ -1259,6 +1267,14 @@ const settings = definePluginSettings({
  * is changed. The popup reads the real nick back from the store when it renders, so nothing
  * on screen looks different.
  */
+/**
+ * The name for one row of the mention autocomplete list. Called from the query rather than
+ * from a component, so it has to stay hookless.
+ */
+function getMentionAutocompleteNameText(user: User, guildId: string | null) {
+    return getTypingMemberListProfilesReactionsVoiceNameText({ user, guildId: guildId ?? undefined, type: "mentionAutocomplete" });
+}
+
 function withCustomNicknames(members: GuildMember[]) {
     if (settings.store.customNameOnlyInDirectMessages) return members;
 
@@ -1524,6 +1540,14 @@ export default definePlugin({
             }
         },
         {
+            // Show the custom name format in the mention autocomplete list.
+            find: "queryGuildMentionResults(",
+            replacement: {
+                match: /nick:(\i\.\i\.getNick\((\i)\.guild_id,(\i)\.id\))/,
+                replace: "nick:$self.getMentionAutocompleteNameText($3,$2.guild_id)??$1"
+            }
+        },
+        {
             // Let custom names be typed to find someone in mention autocomplete.
             // queryGuildUsers( alone also matches the module that calls it.
             find: "queryGuildMentionResults(",
@@ -1583,5 +1607,6 @@ export default definePlugin({
     shouldAnimateNameEffects,
     getTypingMemberListProfilesReactionsVoiceNameText,
     getTypingMemberListProfilesReactionsVoiceNameElement,
-    withCustomNicknames
+    withCustomNicknames,
+    getMentionAutocompleteNameText
 });
